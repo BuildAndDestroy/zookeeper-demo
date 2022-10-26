@@ -1,0 +1,395 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: zookeeper-distributed
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: myregistrykey
+  namespace: zookeeper-distributed
+data:
+  .dockerconfigjson: {{ Place your ~/.docker.config | base64 text string here}}
+type: kubernetes.io/dockerconfigjson
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zookeeper-client-service-1 # MARK B
+  namespace: zookeeper-distributed
+spec:
+  type: ClusterIP
+  ports:
+  - name: client
+    port: 2181
+    targetPort: 2181
+    protocol: TCP
+  - name: distribute
+    port: 2888
+    targetPort: 2888
+    protocol: TCP
+  - name: elect
+    port: 3888
+    targetPort: 3888
+    protocol: TCP
+  selector:
+    app: zookeeper-distribute-app-1 # Must match with `MARK A` in deployment.yaml
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+ name: zookeeper-cfgmap-1
+ namespace: zookeeper-distributed
+data:
+ file-from-cfgmap: |
+   tickTime=2000
+   initLimit=10
+   syncLimit=5
+   dataDir=/var/lib/zookeeper
+   clientPort=2181
+   server.1=0.0.0.0:2888:3888
+   server.2=zookeeper-client-service-2.zookeeper-distributed.svc.cluster.local:2888:3888
+   server.3=zookeeper-client-service-3.zookeeper-distributed.svc.cluster.local:2888:3888
+#  my-id-file: |
+#    1
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+ name: zookeeper-cfgmap-2
+ namespace: zookeeper-distributed
+data:
+ file-from-cfgmap: |
+   tickTime=2000
+   initLimit=10
+   syncLimit=5
+   dataDir=/var/lib/zookeeper
+   clientPort=2181
+   server.1=zookeeper-client-service-1.zookeeper-distributed.svc.cluster.local:2888:3888
+   server.2=0.0.0.0:2888:3888
+   server.3=zookeeper-client-service-3.zookeeper-distributed.svc.cluster.local:2888:3888
+#  my-id-file: |
+#    2
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+ name: zookeeper-cfgmap-3
+ namespace: zookeeper-distributed
+data:
+ file-from-cfgmap: |
+   tickTime=2000
+   initLimit=10
+   syncLimit=5
+   dataDir=/var/lib/zookeeper
+   clientPort=2181
+   server.1=zookeeper-client-service-1.zookeeper-distributed.svc.cluster.local:2888:3888
+   server.2=zookeeper-client-service-2.zookeeper-distributed.svc.cluster.local:2888:3888
+   server.3=0.0.0.0:2888:3888
+#  my-id-file: |
+#    3
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: zookeeper-server-1-pv
+  namespace: zookeeper-distributed
+  labels:
+    type: local
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: /mnt/kubernetes/zookeeper/server1
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: zookeeper-server-1-pvc
+  namespace: zookeeper-distributed
+spec:
+  storageClassName: manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: zookeeper-distributed
+  name: zookeeper-distribute-app-1 # MARK A
+  labels:
+    app: zookeeper-distribute-app-1 # MARK A
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zookeeper-distribute-app-1 # MARK A
+  template:
+    metadata:
+      labels:
+        app: zookeeper-distribute-app-1 # MARK A
+    spec:
+      hostname: zookeeper-1
+      subdomain: zookeeper
+      containers:
+      - name: zookeeper-distribute-app-1
+        image: your-repo/zookeeper:3.5.9
+        env:
+        ports:
+        - containerPort: 2181
+        - containerPort: 2888
+        - containerPort: 3888
+        volumeMounts:
+          - name: zookeeper-server-1-volume
+            mountPath: /var/lib/zookeeper
+          - name: zookeeper-cfg-1
+            mountPath: /conf/zoo.cfg
+            subPath: file-from-cfgmap
+          #- name: zookeeper-myid-1
+          #  mountPath: /var/lib/zookeeper/myid
+          #  subPath: my-id-file
+        imagePullPolicy: Always
+      restartPolicy: Always
+      volumes:
+        - name: zookeeper-server-1-volume
+          persistentVolumeClaim:
+            claimName: zookeeper-server-1-pvc # MARK Z
+        - name: zookeeper-cfg-1
+          configMap:
+           name: zookeeper-cfgmap-1
+        #- name: zookeeper-myid-1
+        #  configMap:
+        #    name: zookeeper-cfgmap-1
+      imagePullSecrets:
+      - name: myregistrykey
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zookeeper-client-service-2 # MARK B
+  namespace: zookeeper-distributed
+spec:
+  type: ClusterIP
+  ports:
+  - name: client
+    port: 2181
+    targetPort: 2181
+    protocol: TCP
+  - name: distribute
+    port: 2888
+    targetPort: 2888
+    protocol: TCP
+  - name: elect
+    port: 3888
+    targetPort: 3888
+    protocol: TCP
+  selector:
+    app: zookeeper-distribute-app-2 # Must match with `MARK A` in deployment.yaml
+---
+# Create PersistentVolume
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: zookeeper-server-2-pv
+  namespace: zookeeper-distributed
+  labels:
+    type: local
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: /mnt/kubernetes/zookeeper/server2
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: zookeeper-server-2-pvc
+  namespace: zookeeper-distributed
+spec:
+  storageClassName: manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: zookeeper-distributed
+  name: zookeeper-distribute-app-2 # MARK A
+  labels:
+    app: zookeeper-distribute-app-2 # MARK A
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zookeeper-distribute-app-2 # MARK A
+  template:
+    metadata:
+      labels:
+        app: zookeeper-distribute-app-2 # MARK A
+    spec:
+      hostname: zookeeper-2
+      subdomain: zookeeper
+      containers:
+      - name: zookeeper-distribute-app-2
+        image: your-repo/zookeeper:3.5.9
+        env:
+        ports:
+        - containerPort: 2181
+        - containerPort: 2888
+        - containerPort: 3888
+        volumeMounts:
+          - name: zookeeper-server-2-volume
+            mountPath: /var/lib/zookeeper
+          - name: zookeeper-cfg-2
+            mountPath: /conf/zoo.cfg
+            subPath: file-from-cfgmap
+        imagePullPolicy: Always
+      restartPolicy: Always
+      volumes:
+        - name: zookeeper-server-2-volume
+          persistentVolumeClaim:
+            claimName: zookeeper-server-2-pvc # MARK Z
+        - name: zookeeper-cfg-2
+          configMap:
+           name: zookeeper-cfgmap-2
+      imagePullSecrets:
+      - name: myregistrykey
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zookeeper-client-service-3 # MARK B
+  namespace: zookeeper-distributed
+spec:
+  type: ClusterIP
+  ports:
+  - name: client
+    port: 2181
+    targetPort: 2181
+    protocol: TCP
+  - name: distribute
+    port: 2888
+    targetPort: 2888
+    protocol: TCP
+  - name: elect
+    port: 3888
+    targetPort: 3888
+    protocol: TCP
+  selector:
+    app: zookeeper-distribute-app-3 # Must match with `MARK A` in deployment.yam
+---
+# Create PersistentVolume
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: zookeeper-server-3-pv
+  namespace: zookeeper-distributed
+  labels:
+    type: local
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: /mnt/kubernetes/zookeeper/server3
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: zookeeper-server-3-pvc
+  namespace: zookeeper-distributed
+spec:
+  storageClassName: manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: zookeeper-distributed
+  name: zookeeper-distribute-app-3 # MARK A
+  labels:
+    app: zookeeper-distribute-app-3 # MARK A
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zookeeper-distribute-app-3 # MARK A
+  template:
+    metadata:
+      labels:
+        app: zookeeper-distribute-app-3 # MARK A
+    spec:
+      hostname: zookeeper-3
+      subdomain: zookeeper
+      containers:
+      - name: zookeeper-distribute-app-3
+        image: your-repo/zookeeper:3.5.9
+        env:
+        ports:
+        - containerPort: 2181
+        - containerPort: 2888
+        - containerPort: 3888
+        volumeMounts:
+          - name: zookeeper-server-3-volume
+            mountPath: /var/lib/zookeeper
+          - name: zookeeper-cfg-3
+            mountPath: /conf/zoo.cfg
+            subPath: file-from-cfgmap
+        imagePullPolicy: Always
+      restartPolicy: Always
+      volumes:
+        - name: zookeeper-server-3-volume
+          persistentVolumeClaim:
+            claimName: zookeeper-server-3-pvc # MARK Z
+        - name: zookeeper-cfg-3
+          configMap:
+           name: zookeeper-cfgmap-3
+      imagePullSecrets:
+      - name: myregistrykey
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: zookeeper-distributed
+  name: zookeeper-client # MARK A
+  labels:
+    app: zookeeper-client # MARK A
+spec:
+  replicas: 100
+  selector:
+    matchLabels:
+      app: zookeeper-client # MARK A
+  template:
+    metadata:
+      labels:
+        app: zookeeper-client # MARK A
+    spec:
+      hostname: zookeeper-client
+      subdomain: zookeeper
+      containers:
+      - name: zookeeper-client
+        image: your-repo/zookeeper-client:5
+        env:
+        imagePullPolicy: IfNotPresent
+      restartPolicy: Always
+      imagePullSecrets:
+      - name: myregistrykey
+

@@ -1,0 +1,8 @@
+tickTime=2000
+initLimit=10
+syncLimit=5
+dataDir=/var/lib/zookeeper
+clientPort=2181
+server.1=zookeeper-client-service-1.zookeeper-distributed.svc.cluster.local:2888:3888
+server.2=zookeeper-client-service-2.zookeeper-distributed.svc.cluster.local:2888:3888
+server.3=0.0.0.0:2888:3888

@@ -1,0 +1,8 @@
+FROM alpine:latest
+RUN apk update
+RUN apk add python3 py3-pip
+RUN pip install kazoo
+WORKDIR /opt/
+COPY testme.py .
+CMD ["./testme.py", "--chroot", "sleeper_app", "--identifier", "test_client_1", "--path", "/particular_resource", "--time", "1", "--zookeeper", "zookeeper-client-service-1.zookeeper-distributed.svc.cluster.local:2181,zookeeper-client-service-2.zookeeper-distributed.svc.cluster.local:2181,zookeeper-client-service-3.zookeeper-distributed.svc.cluster.local:2181"]
+
